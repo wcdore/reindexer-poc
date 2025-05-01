@@ -12,7 +12,12 @@ import (
 	"time"
 
 	"github.com/peter/reindexer-poc/pkg/queue"
+	"github.com/rabbitmq/amqp091-go"
 )
+
+type Queue interface {
+	ConsumeBatch(queue string, prefetchCount int) (<-chan amqp091.Delivery, error)
+}
 
 type Config struct {
 	RabbitMQURI         string
@@ -130,7 +135,7 @@ func loadConfig() Config {
 	return config
 }
 
-func consumeLoop(ctx context.Context, rmq *queue.RabbitMQ, config Config, statsChan chan<- BatchStats, wg *sync.WaitGroup) {
+func consumeLoop(ctx context.Context, rmq Queue, config Config, statsChan chan<- BatchStats, wg *sync.WaitGroup) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -161,7 +166,7 @@ func consumeLoop(ctx context.Context, rmq *queue.RabbitMQ, config Config, statsC
 	}
 }
 
-func createBatch(ctx context.Context, rmq *queue.RabbitMQ, config Config) ([]string, BatchStats) {
+func createBatch(ctx context.Context, rmq Queue, config Config) ([]string, BatchStats) {
 	batch := make([]string, 0, config.MaxBatchSize)
 	stats := BatchStats{
 		ProcessedAt: time.Now(),
@@ -228,7 +233,7 @@ func createBatch(ctx context.Context, rmq *queue.RabbitMQ, config Config) ([]str
 	return batch, stats
 }
 
-func getMessagesFromQueue(ctx context.Context, rmq *queue.RabbitMQ, queueName string, count int) ([]string, error) {
+func getMessagesFromQueue(ctx context.Context, rmq Queue, queueName string, count int) ([]string, error) {
 	if count <= 0 {
 		return []string{}, nil
 	}
