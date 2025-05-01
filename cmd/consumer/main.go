@@ -183,7 +183,6 @@ func createBatch(ctx context.Context, rmq *queue.RabbitMQ, config Config) ([]str
 	remainingSlots := config.MaxBatchSize - stats.TotalSize
 
 	// Get messages from standard priority queue - use all remaining slots
-	// This ensures standard gets priority over low queue
 	if remainingSlots > 0 {
 		standardMessages, err := getMessagesFromQueue(ctx, rmq, queue.QueueStandard, remainingSlots)
 		if err != nil {
@@ -195,6 +194,24 @@ func createBatch(ctx context.Context, rmq *queue.RabbitMQ, config Config) ([]str
 
 		// Recalculate remaining slots after standard queue
 		remainingSlots = config.MaxBatchSize - stats.TotalSize
+
+		// If standard queue didn't have enough messages to fill the batch,
+		// try to get more from high queue before going to low queue
+		// This handles both empty standard queue and partially filled standard queue
+		if remainingSlots > 0 {
+			// Get more from high priority queue to fill the batch
+			additionalHighMessages, err := getMessagesFromQueue(ctx, rmq, queue.QueueHigh, remainingSlots)
+			if err != nil {
+				log.Printf("Error getting additional messages from high priority queue: %v", err)
+			}
+			batch = append(batch, additionalHighMessages...)
+			additionalCount := len(additionalHighMessages)
+			stats.HighCount += additionalCount
+			stats.TotalSize += additionalCount
+
+			// Update remaining slots after getting more high priority messages
+			remainingSlots = config.MaxBatchSize - stats.TotalSize
+		}
 	}
 
 	// If we still have space, fill remaining slots with low priority messages
