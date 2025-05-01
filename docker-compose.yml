@@ -1,0 +1,58 @@
+version: "3"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672" # AMQP port
+      - "15672:15672" # Management UI port
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - reindexer_net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    container_name: consumer
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - RABBITMQ_URI=amqp://guest:guest@rabbitmq:5672/
+      - MAX_BATCH_SIZE=10000
+      - HIGH_QUEUE_PERCENTAGE=95
+      - PROCESSING_DELAY_MS=300
+    networks:
+      - reindexer_net
+
+  producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.producer
+    container_name: producer
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - RABBITMQ_URI=amqp://guest:guest@rabbitmq:5672/
+    networks:
+      - reindexer_net
+
+networks:
+  reindexer_net:
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
